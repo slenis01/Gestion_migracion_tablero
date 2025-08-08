@@ -116,8 +116,7 @@ def listar_archivos_excel(carpeta: Path, patron: str):
     for p in archivos:
         nombre = p.stem
         paquete = nombre.replace("estado_gestion_", "")
-        ts = datetime.fromtimestamp(p.stat().st_mtime).strftime("%Y-%m-%d %H:%M:%S")
-        items.append((f"{paquete}  •  {ts}", p))
+        items.append((paquete, p))
     return items
 
 st.markdown("### 📂 Selecciona el paquete (archivo Excel)")
