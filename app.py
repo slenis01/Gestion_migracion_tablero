@@ -15,8 +15,8 @@ EXPORT_DIR = (APP_DIR / "Resultado")  # carpeta dentro del repo
 EXPORT_DIR.mkdir(parents=True, exist_ok=True)
 ASSETS_DIR = APP_DIR / "assets"
 
-PATRON = "estado_gestion_*.xlsx"
-HOJA_DETALLE = "Detalle"
+ARCHIVO_FIJO = EXPORT_DIR / "estado_gestion_todos.xlsx"
+HOJA_DETALLE = "Detalle"  # si no existe, se leerá la primera hoja disponible
 
 # ── Estilos por estado ───────────────────────────────────────────────
 estilos_estado = {
@@ -108,30 +108,15 @@ if logo_vs2.exists() and logo_wh.exists():
         unsafe_allow_html=True
     )
 
-# ── Selector de archivo (rutas relativas al repo) ────────────────────
-@st.cache_data
-def listar_archivos_excel(carpeta: Path, patron: str):
-    archivos = sorted(carpeta.glob(patron), key=lambda p: p.stat().st_mtime, reverse=True)
-    items = []
-    for p in archivos:
-        nombre = p.stem
-        paquete = nombre.replace("estado_gestion_", "")
-        items.append((paquete, p))
-    return items
-
-st.markdown("### 📂 Selecciona el paquete (archivo Excel)")
-items_excel = listar_archivos_excel(EXPORT_DIR, PATRON)
-if not items_excel:
-    st.warning(f"No se encontraron archivos con el patrón '{PATRON}' en {EXPORT_DIR.relative_to(APP_DIR)}")
+# ── Verificación de archivo fijo ─────────────────────────────────────
+st.markdown("### 📄 Archivo fuente")
+if not ARCHIVO_FIJO.exists():
+    st.warning(f"No se encontró el archivo esperado: {ARCHIVO_FIJO.relative_to(APP_DIR)}")
     st.stop()
+st.caption(f"📄 Usando: {ARCHIVO_FIJO.name}  •  Ruta relativa: {ARCHIVO_FIJO.relative_to(APP_DIR)}")
 
-labels = [lbl for lbl, _ in items_excel]
-seleccion = st.selectbox("Archivo disponible", labels, index=0)  # el más reciente
-RUTA_EXCEL = dict(items_excel)[seleccion]
-st.caption(f"📄 Usando: {RUTA_EXCEL.name}  •  Ruta relativa: {RUTA_EXCEL.relative_to(APP_DIR)}")
-
-# ── ÚNICO BOTÓN + recarga auto por cambio de archivo ────────────────
-ultima_modificacion_actual = RUTA_EXCEL.stat().st_mtime
+# ── Autorefresco por mtime ───────────────────────────────────────────
+ultima_modificacion_actual = ARCHIVO_FIJO.stat().st_mtime
 if "ultima_modificacion" not in st.session_state:
     st.session_state.ultima_modificacion = ultima_modificacion_actual
 
@@ -145,17 +130,28 @@ if st.button("🔄 Recargar datos"):
     st.cache_data.clear()
     st.rerun()
 
-# ── Carga cacheada (invalida por mtime) ─────────────────────────────
+# ── Carga cacheada (intenta 'Detalle', si no toma primera hoja) ──────
 @st.cache_data
-def cargar_detalle(ruta_excel: Path, mtime: float) -> pd.DataFrame:
-    df = pd.read_excel(ruta_excel, sheet_name=HOJA_DETALLE)
+def cargar_todos(ruta_excel: Path, mtime: float) -> pd.DataFrame:
+    # intenta hoja 'Detalle'; si falla, usa la primera
+    try:
+        df = pd.read_excel(ruta_excel, sheet_name=HOJA_DETALLE)
+    except Exception:
+        df = pd.read_excel(ruta_excel)  # primera hoja
+
+    # normalizaciones útiles
     if 'fecha_ruta' in df.columns:
         df['fecha_ruta'] = pd.to_datetime(df['fecha_ruta'], errors='coerce')
+    if 'Codigo_Punto' in df.columns:
+        df['Codigo_Punto'] = pd.to_numeric(df['Codigo_Punto'], errors='coerce')
+    # asegura existencia de paquetes_logisticos
+    if 'paquetes_logisticos' in df.columns:
+        df['paquetes_logisticos'] = df['paquetes_logisticos'].astype(str).str.strip()
     return df
 
-df_detalle = cargar_detalle(RUTA_EXCEL, st.session_state.ultima_modificacion)
-if df_detalle.empty:
-    st.warning("No hay datos en la hoja 'Detalle' del Excel seleccionado.")
+df_todos = cargar_todos(ARCHIVO_FIJO, st.session_state.ultima_modificacion)
+if df_todos.empty:
+    st.warning("El archivo no tiene datos para mostrar.")
     st.stop()
 
 # ── Banner “archivo actualizado automáticamente” ─────────────────────
@@ -171,8 +167,24 @@ if st.session_state.get("_mostrar_banner_autorefresco"):
         if TZ_BOG else
         datetime.fromtimestamp(st.session_state.ultima_modificacion).strftime("%Y-%m-%d %H:%M:%S")
     )
-    st.success(f"♻ Archivo actualizado automáticamente: {RUTA_EXCEL.name} • {fecha_str}")
+    st.success(f"♻ Archivo actualizado automáticamente: {ARCHIVO_FIJO.name} • {fecha_str}")
     st.session_state._mostrar_banner_autorefresco = False
+
+# ── Selector de paquete (desde la columna paquetes_logisticos) ───────
+if 'paquetes_logisticos' not in df_todos.columns:
+    st.error("El archivo no contiene la columna 'paquetes_logisticos'.")
+    st.stop()
+
+paquetes = sorted([p for p in df_todos['paquetes_logisticos'].dropna().unique()])
+opciones_paquete = ['Todos'] + paquetes
+st.markdown("### 📦 Selecciona paquete logístico")
+paquete_sel = st.selectbox("Paquete", opciones_paquete, index=0)
+
+# Filtrado según paquete
+df_detalle = df_todos if paquete_sel == 'Todos' else df_todos[df_todos['paquetes_logisticos'] == paquete_sel]
+if df_detalle.empty:
+    st.warning("No hay puntos para el paquete seleccionado.")
+    st.stop()
 
 # ── Detectar columna de estado ───────────────────────────────────────
 col_estado_grupo = detectar_columna_estado(df_detalle)
