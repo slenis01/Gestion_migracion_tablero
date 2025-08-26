@@ -5,6 +5,7 @@ import plotly.graph_objects as go
 from datetime import datetime
 from pathlib import Path
 import unicodedata
+from datetime import date
 
 # ── Config de página ─────────────────────────────────────────────────
 st.set_page_config(page_title="Tablero Gestión migración", layout="wide", initial_sidebar_state="expanded")
@@ -139,15 +140,15 @@ if not ARCHIVO_FIJO.exists():
     st.stop()
 st.caption(f"📄 Usando: {ARCHIVO_FIJO.name} • Ruta relativa: {ARCHIVO_FIJO.relative_to(APP_DIR)}")
 
-ultima_modificacion_actual = ARCHIVO_FIJO.stat().st_mtime
-if "ultima_modificacion" not in st.session_state:
-    st.session_state.ultima_modificacion = ultima_modificacion_actual
+# ultima_modificacion_actual = ARCHIVO_FIJO.stat().st_mtime
+# if "ultima_modificacion" not in st.session_state:
+#     st.session_state.ultima_modificacion = ultima_modificacion_actual
 
-if ultima_modificacion_actual != st.session_state.ultima_modificacion:
-    st.session_state._mostrar_banner_autorefresco = True
-    st.session_state.ultima_modificacion = ultima_modificacion_actual
-    st.cache_data.clear()
-    st.rerun()
+# if ultima_modificacion_actual != st.session_state.ultima_modificacion:
+#     st.session_state._mostrar_banner_autorefresco = True
+#     st.session_state.ultima_modificacion = ultima_modificacion_actual
+#     st.cache_data.clear()
+#     st.rerun()
 
 if st.button("🔄 Recargar datos"):
     st.cache_data.clear()
@@ -169,8 +170,8 @@ if st.session_state.get("_mostrar_banner_autorefresco"):
     st.session_state._mostrar_banner_autorefresco = False
 
 # ── Cargar Excel ─────────────────────────────────────────────────────
-@st.cache_data
-def cargar_todos(ruta_excel: Path, mtime: float) -> pd.DataFrame:
+#@st.cache_data
+def cargar_todos(ruta_excel: Path) -> pd.DataFrame:
     try:
         df = pd.read_excel(ruta_excel, sheet_name=HOJA_DETALLE)
     except Exception:
@@ -191,7 +192,7 @@ def cargar_todos(ruta_excel: Path, mtime: float) -> pd.DataFrame:
 
     return df
 
-df_todos = cargar_todos(ARCHIVO_FIJO, st.session_state.ultima_modificacion)
+df_todos = cargar_todos(ARCHIVO_FIJO)
 if df_todos.empty:
     st.warning("El archivo no tiene datos para mostrar.")
     st.stop()
